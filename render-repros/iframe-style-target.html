@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Iframe interface style target</title></head>
+<body>
+<h1>Style target regression</h1>
+<p id="result">Waiting for style insertion</p>
+<script>
+try {
+  let target = document.querySelector('head');
+  if (window.HTMLIFrameElement && target instanceof window.HTMLIFrameElement) {
+    try { target = target.contentDocument.head; } catch (_) { target = null; }
+  }
+  if (!target) throw new Error("Couldn't find a style target");
+  const style = document.createElement('style');
+  style.textContent = 'body { background: #142536; color: #b5f5dc; font: 24px sans-serif; padding: 32px; }';
+  target.appendChild(style);
+  document.getElementById('result').textContent = 'PASS: style inserted into head';
+} catch (error) {
+  document.getElementById('result').textContent = 'FAIL: ' + error.message;
+}
+</script>
+</body>
+</html>

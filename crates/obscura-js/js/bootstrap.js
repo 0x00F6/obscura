@@ -7078,6 +7078,9 @@ function _elementClassFor(nid) {
     if (globalThis.SVGElement) return globalThis.SVGElement;
   }
   if (tag === "FORM" && globalThis.HTMLFormElement) return globalThis.HTMLFormElement;
+  if (tag === "IFRAME" && globalThis.HTMLIFrameElement
+      && _domParse("namespace_uri", nid) === "http://www.w3.org/1999/xhtml"
+      && _domParse("local_name", nid) === "iframe") return globalThis.HTMLIFrameElement;
   if (tag === "INPUT" && globalThis.HTMLInputElement
       && _domParse("namespace_uri", nid) === "http://www.w3.org/1999/xhtml"
       && _domParse("local_name", nid) === "input") return globalThis.HTMLInputElement;
@@ -7110,6 +7113,7 @@ function _elementClassForKnownName(namespace, qualifiedName) {
   if (namespace === "http://www.w3.org/1999/xhtml") {
     const tag = localName.toUpperCase();
     if (tag === "FORM" && globalThis.HTMLFormElement) return globalThis.HTMLFormElement;
+    if (localName === "iframe" && globalThis.HTMLIFrameElement) return globalThis.HTMLIFrameElement;
     if (localName === "input" && globalThis.HTMLInputElement) return globalThis.HTMLInputElement;
     if (tag === "TEXTAREA" && globalThis.HTMLTextAreaElement) return globalThis.HTMLTextAreaElement;
     if (localName === "meta" && globalThis.HTMLMetaElement) return globalThis.HTMLMetaElement;
@@ -13112,7 +13116,8 @@ for (const proto of [HTMLInputElement.prototype, HTMLTextAreaElement.prototype])
   Object.defineProperty(proto, 'readOnly', { enumerable: true });
 }
 globalThis.HTMLTableElement = Element;
-globalThis.HTMLIFrameElement = Element;
+// A head or other ordinary element must not pass iframe-specific library gates.
+globalThis.HTMLIFrameElement = class HTMLIFrameElement extends Element {};
 globalThis.HTMLCanvasElement = Element;
 // HTMLVideoElement and HTMLAudioElement are defined above with canPlayType support.
 globalThis.HTMLScriptElement = Element;

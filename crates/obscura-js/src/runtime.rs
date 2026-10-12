@@ -5344,6 +5344,49 @@ mod tests {
     }
 
     #[test]
+    fn html_iframe_element_class_is_tag_specific() {
+        let mut rt = setup_runtime("<html><head></head><body><iframe id='frame'></iframe><div id='other'></div></body></html>");
+        assert_eq!(rt.evaluate(r#"(() => {
+            const frame = document.getElementById('frame');
+            const created = document.createElement('iframe');
+            const namespaced = document.createElementNS('http://www.w3.org/1999/xhtml', 'iframe');
+            const foreign = document.createElementNS('http://www.w3.org/2000/svg', 'iframe');
+            return {
+                frames: [frame, created, namespaced, frame.cloneNode(false), document.createElement('IFRAME')]
+                    .map(node => node instanceof HTMLIFrameElement),
+                others: [document.head, document.body, document.getElementById('other'), foreign]
+                    .map(node => node instanceof HTMLIFrameElement),
+                inheritance: [frame instanceof HTMLElement, frame instanceof Element,
+                    frame instanceof Node, frame.constructor === HTMLIFrameElement],
+                interfaceName: HTMLIFrameElement.name,
+            };
+        })()"#).unwrap(), serde_json::json!({
+            "frames": [true, true, true, true, true],
+            "others": [false, false, false, false],
+            "inheritance": [true, true, true, true],
+            "interfaceName": "HTMLIFrameElement",
+        }));
+    }
+
+    #[test]
+    fn style_loader_targets_head_without_frame_redirection() {
+        let mut rt = setup_runtime("<html><head></head><body></body></html>");
+        assert_eq!(rt.evaluate(r#"(() => {
+            let target = document.querySelector('head');
+            // Mirror the generic style-loader branch observed on Duck.ai.
+            if (window.HTMLIFrameElement && target instanceof window.HTMLIFrameElement) {
+                try { target = target.contentDocument.head; } catch (_) { target = null; }
+            }
+            if (!target) throw new Error("Couldn't find a style target");
+            const style = document.createElement('style');
+            style.textContent = 'body { color: rgb(1, 2, 3); }';
+            target.appendChild(style);
+            return [target === document.head, style.parentNode === document.head,
+                document.head.querySelectorAll('style').length];
+        })()"#).unwrap(), serde_json::json!([true, true, 1]));
+    }
+
+    #[test]
     fn iframe_content_window_exposes_realm_globals() {
         let mut rt = setup_runtime("<html><body></body></html>");
 
