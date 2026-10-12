@@ -246,10 +246,9 @@ pub fn ua_style(tag: &str) -> LayoutStyle {
     } else if tag == "textarea" {
         // A native textarea is an atomic inline-block control whose
         // intrinsic box comes from rows/cols (resolved in dom.rs once the
-        // attributes are readable), not from its text content. Unlike the
-        // other controls it keeps its content in the tree (the value is the
-        // text child), laid out inside the sized box; line breaks in the
-        // value must survive, hence pre-wrap. Chromium defaults the control
+        // attributes are readable), not from its text content. Its children
+        // store the default, while the live value is painted inside this box.
+        // Line breaks in the value must survive, hence pre-wrap. Chromium defaults the control
         // to the fixed-pitch face and to border-box sizing.
         style.display = Display::Inline;
         style.is_inline_block = true;

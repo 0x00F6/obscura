@@ -12975,7 +12975,11 @@ fn build(
     }
 
     if matches!(_name.local.as_ref(), "input" | "select" | "textarea") {
-        if let Some((width, height)) = style.intrinsic_size {
+        // A textarea's children store its default, not rendered content, even
+        // when explicit CSS dimensions make an intrinsic size unnecessary.
+        let native_size = style.intrinsic_size
+            .or_else(|| (_name.local.as_ref() == "textarea").then_some((0.0, 0.0)));
+        if let Some((width, height)) = native_size {
             let context = engine.register_native_control(width, height, style);
             let leaf = taffy_tree.new_leaf_with_context(taffy_style, context).ok()?;
             id_map.insert(leaf, id);

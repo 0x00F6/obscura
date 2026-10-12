@@ -1870,6 +1870,10 @@ class CSSStyleDeclaration {
   item(i) { this._pull(); return Object.keys(this._props)[i] || ""; }
 }
 
+Object.defineProperty(CSSStyleDeclaration.prototype, Symbol.iterator, {
+  value: Array.prototype.values, writable: true, configurable: true,
+});
+
 const _styleProxy = (decl) => new Proxy(decl, {
   get(t, p) {
     if (typeof p === "symbol" || p in t) return t[p];
@@ -4373,7 +4377,7 @@ class Element extends Node {
     }
     if (_formValues[this._nid] === undefined) _loadFormState(this._nid);
     if (_formValues[this._nid] !== undefined) return _formValues[this._nid];
-    if (tag === 'textarea') return this.textContent;
+    if (tag === 'textarea') return this.textContent.replace(/\r\n?/g, '\n');
     if (tag === 'option') {
       const attr = this.getAttribute('value');
       return attr !== null ? attr : this.textContent;
@@ -4423,12 +4427,11 @@ class Element extends Node {
       }
       return;
     }
-    const value = String(v);
+    const value = tag === 'textarea'
+      ? String(v === null ? '' : v).replace(/\r\n?/g, '\n')
+      : String(v);
     _formValues[this._nid] = value;
     _dom("set_form_value", this._nid, value);
-    if (tag === 'textarea') {
-      this.textContent = value;
-    }
   }
   get min() { return this.getAttribute('min') || ''; }
   set min(v) { this.setAttribute('min', v); }
@@ -13091,6 +13094,9 @@ globalThis.HTMLSelectElement = Element;
 globalThis.HTMLTextAreaElement = class HTMLTextAreaElement extends Element {
   get readOnly() { return this.hasAttribute('readonly'); }
   set readOnly(v) { if (v) this.setAttribute('readonly', ''); else this.removeAttribute('readonly'); }
+  // The text children store the default; edited values use native form state.
+  get defaultValue() { return this.textContent; }
+  set defaultValue(value) { this.textContent = String(value); }
   // `rows`/`cols` reflect the content attributes and drive the control's
   // intrinsic box (the renderer sizes a textarea from them). The attributes
   // are limited to positive non-zero numbers; anything else falls back to the

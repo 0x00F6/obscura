@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Textarea defaults and CSS declaration iteration</title>
+  <style>
+    body { font: 18px Arial, sans-serif; padding: 24px; }
+    textarea { display: block; width: 320px; height: 64px; font: inherit; }
+    p { margin: 16px 0; }
+  </style>
+</head>
+<body>
+  <h1>Textarea defaults and CSS iteration</h1>
+  <textarea id="prompt">Initial default</textarea>
+  <textarea id="multiline">Original default</textarea>
+  <textarea id="empty" placeholder="Empty live value">Original default</textarea>
+  <p id="default-result"></p>
+  <p id="current-result"></p>
+  <p id="style-result"></p>
+  <script>
+    const input = document.getElementById('prompt');
+    try {
+      const initial = input.defaultValue.replace(/\r\n?/g, '\n');
+      input.value = 'Edited text';
+      input.defaultValue = 'New default';
+      document.getElementById('multiline').value = 'First line\nSecond line';
+      document.getElementById('empty').value = '';
+      document.getElementById('default-result').textContent =
+        initial === 'Initial default' && input.defaultValue === 'New default' &&
+        input.textContent === 'New default' ? 'Default value: PASS' : 'Default value: FAIL';
+      document.getElementById('current-result').textContent =
+        input.value === 'Edited text' ? 'Current value: PASS' : 'Current value: FAIL';
+    } catch (error) {
+      document.getElementById('default-result').textContent = error.name + ': ' + error.message;
+    }
+    try {
+      const style = document.createElement('div').style;
+      style.cssText = 'color:red;margin-top:2px;--custom:4';
+      const names = [...style];
+      for (const name of names) style.removeProperty(name);
+      document.getElementById('style-result').textContent =
+        names.join(',') === 'color,margin-top,--custom' && style.cssText === ''
+          ? 'CSS declaration iteration: PASS' : 'CSS declaration iteration: FAIL';
+    } catch (error) {
+      document.getElementById('style-result').textContent = error.name + ': ' + error.message;
+    }
+  </script>
+</body>
+</html>

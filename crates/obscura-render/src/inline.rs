@@ -1552,6 +1552,27 @@ impl TextEngine {
         )
     }
 
+    /// Paint a native control's current value without changing its DOM children.
+    pub(crate) fn paint_control_text(
+        &mut self,
+        text: &str,
+        style: &LayoutStyle,
+        content: Rect,
+        clip: Rect,
+        pixmap: &mut tiny_skia::Pixmap,
+        clip_mask: Option<&tiny_skia::Mask>,
+        raster_scale: f32,
+        print_economy: bool,
+    ) {
+        let Some(item) = self.push_generated_text(text, style) else { return };
+        self.finalize(item, (content.x, content.y), content.width, Some(clip));
+        self.paint_item_with_clip_mask_scaled_for_print(
+            item, pixmap, (0.0, 0.0), Some(clip), clip_mask, raster_scale, print_economy,
+        );
+        // Retained captures must not accumulate one shaped item per value repaint.
+        self.items.truncate(item);
+    }
+
     /// Shared tail of [`try_build`] / [`try_build_run`]: shape the collected
     /// spans into a cosmic-text buffer under `base`'s font metrics and
     /// alignment, and store it as a new inline item.

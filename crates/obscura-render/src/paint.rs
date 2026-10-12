@@ -5265,22 +5265,40 @@ fn paint_laid_dom_scrolled(
         // not real content), so paint it directly from the attribute instead
         // of going through `paint_text_node`.
         if !checkable && (name.local.as_ref() == "input" || name.local.as_ref() == "textarea") {
+            let is_textarea = name.local.as_ref() == "textarea";
             let live_value = tree
                 .form_control_state(nid)
                 .and_then(|control| control.value);
+            let default_value = (is_textarea && live_value.is_none())
+                .then(|| tree.text_content(nid).replace("\r\n", "\n").replace('\r', "\n"));
             let value = live_value
                 .as_deref()
-                .or_else(|| node.get_attribute("value"));
-            let has_value = value.is_some_and(|v| !v.is_empty())
-                || (name.local.as_ref() == "textarea" && !tree.text_content(nid).is_empty());
+                .or_else(|| if is_textarea { default_value.as_deref() } else { node.get_attribute("value") });
+            let has_value = value.is_some_and(|v| !v.is_empty());
+            let content = crate::Rect {
+                x: rect.x + style.padding.left + style.border.left,
+                y: rect.y + style.padding.top + style.border.top,
+                width: (rect.width - style.padding.left - style.padding.right
+                    - style.border.left - style.border.right).max(0.0),
+                height: (rect.height - style.padding.top - style.padding.bottom
+                    - style.border.top - style.border.bottom).max(0.0),
+            };
+            let control_clip = clip.map_or(Some(content), |clip| content.intersect(&clip));
+            if is_textarea && has_value {
+                if let (Some(value), Some(control_clip)) = (value, control_clip) {
+                    laid.text_engine.paint_control_text(
+                        value, style, content, control_clip, &mut pixmap, element_clip_mask,
+                        raster_scale, print_economy,
+                    );
+                }
+            }
             // A text `<input>`'s value is not a DOM text node either, so it
             // needs painting from its live state, falling back to the attribute.
             // Without this the
             // control renders empty however it was filled in — from markup,
             // from script, or by typing — while its `value` reads back
             // correctly, so only a screenshot or PDF shows anything wrong.
-            // `<textarea>` is unaffected: its value *is* a text node.
-            if has_value && name.local.as_ref() == "input" {
+            if has_value && !is_textarea {
                 if let Some(value) = value {
                     if !value.is_empty() {
                         let fsize = style.font_size.unwrap_or(16.0);
@@ -5331,7 +5349,16 @@ fn paint_laid_dom_scrolled(
                             .unwrap_or(1.0)
                             .clamp(0.0, 1.0);
                         color[3] = ((color[3] as f32) * opacity).round() as u8;
-                        if color[3] != 0 {
+                        if is_textarea {
+                            if let Some(control_clip) = control_clip {
+                                let mut placeholder_style = style.clone();
+                                placeholder_style.color = Some(color);
+                                laid.text_engine.paint_control_text(
+                                    placeholder, &placeholder_style, content, control_clip,
+                                    &mut pixmap, element_clip_mask, raster_scale, print_economy,
+                                );
+                            }
+                        } else if color[3] != 0 {
                             draw_text(
                                 &mut pixmap,
                                 placeholder,
@@ -17246,6 +17273,73 @@ mod tests {
         assert!(ink(0) > 10, "a value from markup must paint");
         assert_eq!(ink(30), 0, "an empty control paints nothing");
         assert!(ink(60) > 10, "a password value must paint as bullets");
+    }
+
+    #[test]
+    fn textarea_values_wrap_clip_and_allow_an_empty_live_value() {
+        let tree = parse_html(
+            r#"<html><head><style>
+                 body{margin:0;background:#fff}
+                 textarea{display:block;width:80px;height:60px;border:0;padding:0;
+                          font:16px/20px monospace;color:#000}
+               </style></head><body>
+                 <textarea id="filled">Original default</textarea>
+                 <textarea id="empty">Original default</textarea>
+                 <textarea id="placeholder" placeholder="Hint">Original default</textarea>
+               </body></html>"#,
+        );
+        for (id, value) in [
+            ("filled", "First\nSecond\nThird\nClipped"),
+            ("empty", ""),
+            ("placeholder", ""),
+        ] {
+            tree.update_form_control_state(tree.get_element_by_id(id).unwrap(), |control| {
+                control.value = Some(value.to_string());
+            });
+        }
+        let mut resources = RenderResourceCache::default();
+        let mut prepared =
+            prepare_dom(&tree, (100.0, 180.0), None, &mut resources).expect("textarea layout");
+        let rect = |id| prepared.layout.rects[&tree.get_element_by_id(id).unwrap()];
+        let filled = rect("filled");
+        let empty = rect("empty");
+        let placeholder = rect("placeholder");
+        let paint = |prepared: &mut PreparedRender, resources: &mut RenderResourceCache| {
+            paint_prepared(&tree, prepared, resources, (0.0, 0.0)).expect("textarea paint")
+        };
+        let pixmap = paint(&mut prepared, &mut resources);
+        let ink = |left: u32, top: u32, width: u32, height: u32| {
+            (top..top + height)
+                .flat_map(|y| (left..left + width).map(move |x| (x, y)))
+                .filter(|&(x, y)| {
+                    let pixel = pixmap.pixel(x, y).unwrap();
+                    pixel.red() < 200 || pixel.green() < 200 || pixel.blue() < 200
+                })
+                .count()
+        };
+        for top in [0, 20, 40] {
+            assert!(ink(filled.x as u32, filled.y as u32 + top, filled.width as u32, 20) > 10,
+                "each explicit line must paint");
+        }
+        assert_eq!(ink(empty.x as u32, empty.y as u32, empty.width as u32, empty.height as u32),
+            0, "empty live values override default text");
+        assert!(ink(placeholder.x as u32, placeholder.y as u32,
+            placeholder.width as u32, placeholder.height as u32) > 10,
+            "an empty live value shows its placeholder");
+        let right = (filled.x + filled.width).ceil() as u32;
+        assert_eq!(ink(right, 0, 100 - right, 180), 0,
+            "value text must remain inside the control");
+        assert_eq!(pixmap.data(), paint(&mut prepared, &mut resources).data(),
+            "retained repaint must be stable");
+        tree.update_form_control_state(tree.get_element_by_id("filled").unwrap(), |control| {
+            control.value = Some("First Second Third".to_string());
+        });
+        let wrapped = paint(&mut prepared, &mut resources);
+        let second_line_ink = (filled.y as u32 + 20..filled.y as u32 + 40).any(|y|
+            (filled.x as u32..(filled.x + filled.width) as u32).any(|x| {
+            wrapped.pixel(x, y).unwrap().red() < 200
+        }));
+        assert!(second_line_ink, "the live value must wrap at the control width");
     }
 
     #[test]

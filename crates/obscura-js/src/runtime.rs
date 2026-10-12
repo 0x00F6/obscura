@@ -18912,6 +18912,100 @@ mod tests {
         assert_eq!(bio, serde_json::json!("old text"));
     }
 
+    #[test]
+    fn test_textarea_default_value_is_separate_from_current_value() {
+        let mut rt = setup_runtime(r#"<textarea id="prompt">initial</textarea>"#);
+        let value = rt.evaluate(r#"(() => {
+            const input = document.getElementById('prompt');
+            const initial = input.defaultValue.replace(/\r\n?/g, '\n');
+            input.value = 'edited\r\ntext';
+            const edited = [input.value, input.defaultValue, input.textContent];
+            input.defaultValue = 'new baseline';
+            const changed = [input.value, input.defaultValue, input.textContent];
+            return { initial, edited, changed };
+        })()"#).unwrap();
+        assert_eq!(value, serde_json::json!({
+            "initial": "initial",
+            "edited": ["edited\ntext", "initial", "initial"],
+            "changed": ["edited\ntext", "new baseline", "new baseline"]
+        }));
+    }
+
+    #[test]
+    fn test_textarea_clean_value_tracks_default_and_normalizes_line_endings() {
+        let mut rt = setup_runtime(r#"<textarea id="prompt"></textarea>"#);
+        let value = rt.evaluate(r#"(() => {
+            const input = document.getElementById('prompt');
+            const empty = [input.value, input.defaultValue];
+            input.defaultValue = 'line\r\nnext\rend';
+            const clean = [input.value, input.defaultValue];
+            input.value = null;
+            const nullValue = input.value;
+            input.value = undefined;
+            const undefinedValue = input.value;
+            input.value = 0;
+            return { empty, clean, nullValue, undefinedValue, zeroValue: input.value };
+        })()"#).unwrap();
+        assert_eq!(value, serde_json::json!({
+            "empty": ["", ""],
+            "clean": ["line\nnext\nend", "line\r\nnext\rend"],
+            "nullValue": "", "undefinedValue": "undefined", "zeroValue": "0"
+        }));
+    }
+
+    #[test]
+    fn test_textarea_clone_preserves_current_value_and_original_default() {
+        let mut rt = setup_runtime(r#"<textarea id="prompt">initial</textarea>"#);
+        let value = rt.evaluate(r#"(() => {
+            const input = document.getElementById('prompt');
+            input.value = 'edited';
+            const clone = input.cloneNode(true);
+            return [clone.value, clone.defaultValue, clone.textContent];
+        })()"#).unwrap();
+        assert_eq!(value, serde_json::json!(["edited", "initial", "initial"]));
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn test_textarea_live_value_updates_pixels_without_changing_default() {
+        let mut rt = setup_runtime(
+            "<html><body><textarea id=prompt>Initial default</textarea></body></html>",
+        );
+        rt.set_viewport(320.0, 120.0);
+        let before = rt
+            .screenshot_prepared((320.0, 120.0), Some("http://example.com/test"))
+            .unwrap();
+        rt.evaluate("document.getElementById('prompt').value = 'Edited text'")
+            .unwrap();
+        assert_eq!(
+            rt.evaluate("document.getElementById('prompt').defaultValue").unwrap(),
+            serde_json::json!("Initial default")
+        );
+        assert_ne!(
+            before,
+            rt.screenshot_prepared((320.0, 120.0), Some("http://example.com/test"))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_css_style_declaration_is_iterable_for_property_removal() {
+        let mut rt = setup_runtime("<div></div>");
+        let value = rt.evaluate(r#"(() => {
+            const style = document.querySelector('div').style;
+            const empty = [...style];
+            style.cssText = 'color:red;margin-top:2px;--custom:4';
+            const names = [...style];
+            for (const name of names) style.removeProperty(name);
+            return { empty, names, remaining: style.cssText,
+                nativeIterator: style[Symbol.iterator] === Array.prototype.values };
+        })()"#).unwrap();
+        assert_eq!(value, serde_json::json!({
+            "empty": [], "names": ["color", "margin-top", "--custom"], "remaining": "",
+            "nativeIterator": true
+        }));
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn test_sequential_runtime_swap() {
         let mut rt1 = setup_runtime("<html><body><h1>Page1</h1></body></html>");
