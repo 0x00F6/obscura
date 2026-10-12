@@ -5096,6 +5096,30 @@ mod tests {
     }
 
     #[test]
+    fn iframe_shadow_roots_belong_to_their_document() {
+        let mut rt = setup_runtime("<html><body></body></html>");
+        assert_eq!(rt.evaluate(r#"(() => {
+            const parentRoot = document.body.attachShadow({mode: 'open'});
+            parentRoot.textContent = 'parent';
+            const first = document.createElement('iframe');
+            const second = document.createElement('iframe');
+            document.body.appendChild(first);
+            document.body.appendChild(second);
+            const firstDoc = first.contentWindow.document;
+            const secondDoc = second.contentWindow.document;
+            const firstRoot = firstDoc.body.attachShadow({mode: 'open'});
+            const secondRoot = secondDoc.body.attachShadow({mode: 'closed'});
+            firstRoot.innerHTML = '<span>first</span>';
+            secondRoot.textContent = 'second';
+            return [parentRoot.textContent, firstRoot.textContent, secondRoot.textContent,
+                firstDoc.body.shadowRoot === firstRoot,
+                secondDoc.body.shadowRoot === null,
+                firstRoot.host.ownerDocument === firstDoc,
+                secondRoot.host.ownerDocument === secondDoc];
+        })()"#).unwrap(), serde_json::json!(["parent", "first", "second", true, true, true, true]));
+    }
+
+    #[test]
     fn document_realm_registration_preserves_main_context_rust_slots() {
         let mut rt = setup_runtime("<html><body></body></html>");
         rt.expose_ops_for_tests();
