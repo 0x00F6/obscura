@@ -5068,6 +5068,34 @@ mod tests {
     }
 
     #[test]
+    fn initial_frame_initializer_can_reenter_host_ops() {
+        let mut rt = setup_runtime("<html><body></body></html>");
+        rt.expose_ops_for_tests();
+        assert_eq!(rt.evaluate(r#"(() => {
+            const frame = document.createElement('iframe');
+            document.body.appendChild(frame);
+            const child = frame.contentWindow;
+            child.document.body.textContent = 'first child';
+            const nested = child.document.createElement('iframe');
+            child.document.body.appendChild(nested);
+            nested.contentWindow.document.body.textContent = 'nested child';
+            return [child.document.querySelector('body').firstChild.textContent,
+                nested.contentWindow.document.body.textContent,
+                document.body.firstChild === frame];
+        })()"#).unwrap(), serde_json::json!(["first child", "nested child", true]));
+        // The initializer may also invoke an op that mutates OpState.
+        assert_eq!(rt.evaluate(r#"(() => {
+            const owner = document.createElement('iframe');
+            let resource;
+            const frameId = __obscura_test_ops.op_initial_frame(0, () => {
+                resource = __obscura_test_ops.op_fetch_cancel_handle();
+            }, owner._nid);
+            __obscura_test_ops.op_try_close(resource);
+            return frameId > 0 && typeof resource === 'number';
+        })()"#).unwrap(), serde_json::json!(true));
+    }
+
+    #[test]
     fn document_realm_registration_preserves_main_context_rust_slots() {
         let mut rt = setup_runtime("<html><body></body></html>");
         rt.expose_ops_for_tests();

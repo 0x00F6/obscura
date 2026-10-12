@@ -6014,18 +6014,23 @@ pub fn max_live_frames() -> usize {
 }
 
 /// An initial about:blank needs its own realm before the next JS statement.
-#[op2(nofast)]
+/// Its initializer runs JavaScript that calls host ops in the child realm.
+#[op2(nofast, reentrant)]
 fn op_initial_frame(
     scope: &mut v8::PinScope,
-    state: &OpState,
+    state: Rc<RefCell<OpState>>,
     parent_frame_id: u32,
     initialize: v8::Local<v8::Function>,
     owner_node: u32,
 ) -> u32 {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let registry = state.borrow::<Rc<RefCell<RealmStates>>>().clone();
-        let page = state.borrow::<SharedState>().clone();
-        let parent_state = frame_state(state, parent_frame_id);
+        // Release the OpState borrow before calling the initializer. Nested
+        // ops may need mutable access to the same state during initialization.
+        let (registry, page, parent_state) = {
+            let state = state.borrow();
+            (state.borrow::<Rc<RefCell<RealmStates>>>().clone(),
+                state.borrow::<SharedState>().clone(), frame_state(&state, parent_frame_id))
+        };
         if registry.borrow().live_count() >= max_live_frames()
             || page.borrow().pending_frames.len() >= MAX_PENDING_FRAME_DOCUMENTS
             || page.borrow().pending_frame_bytes.saturating_add("about:blank".len()) > MAX_PENDING_FRAME_BYTES

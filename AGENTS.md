@@ -48,6 +48,11 @@ cargo nextest run --release --features render --no-fail-fast
 single V8 isolate per process, so the runtime tests fail under it. `nextest`
 runs each test in its own process, which is the only supported way.
 
+Ops that call back into JavaScript must declare `reentrant` and release Rust
+state borrows before invoking the callback. Test those paths with focused debug
+nextest runs as well as release: deno_core's reentrancy guard is debug-only, so
+a passing release suite does not rule out an abort in a debug build.
+
 The authoritative behavioral gate is the **obstacle course** in the companion
 repo `obscura-benchmark` (33 capability + speed stages, must stay 33/33):
 
